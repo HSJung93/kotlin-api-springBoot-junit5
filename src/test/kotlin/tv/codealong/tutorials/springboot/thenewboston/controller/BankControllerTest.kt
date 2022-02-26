@@ -1,5 +1,6 @@
 package tv.codealong.tutorials.springboot.thenewboston.controller
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -12,23 +13,32 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
+import org.springframework.test.web.servlet.post
+import tv.codealong.tutorials.springboot.thenewboston.model.Bank
 
 // instead of testing pure POJO by creating objects
 // use spring boots testing capabilities ...
 // SpringBootTest annotation is integration test: initializes the whole application context, not Mock
 @AutoConfigureMockMvc
 @SpringBootTest
-internal class BankControllerTest{
+internal class BankControllerTest @Autowired constructor(
+    val mockMvc: MockMvc,
+    val objectMapper: ObjectMapper
+){
     // not actual http request
     // lateinit : framework is responsible for injecting this object -> @Autowired
-    @Autowired
-    lateinit var mockMvc: MockMvc
+//    @Autowired
+//    lateinit var mockMvc: MockMvc
+//
+//    @Autowired
+//    lateinit var objectMapper: ObjectMapper
 
 
     val baseUrl = "/api/banks"
 
     @Nested
-    @DisplayName("getBanks()")
+    @DisplayName("GET /api/banks")
     @TestInstance(Lifecycle.PER_CLASS)
     inner class GetBanks {
 
@@ -47,7 +57,7 @@ internal class BankControllerTest{
     }
 
     @Nested
-    @DisplayName("getBank()")
+    @DisplayName("GET /api/bank/{accountNumber}")
     @TestInstance(Lifecycle.PER_CLASS)
     inner class GetBank {
 
@@ -62,8 +72,8 @@ internal class BankControllerTest{
                 .andExpect {
                     status{isOk()}
                     content{ contentType(MediaType.APPLICATION_JSON)}
-                    jsonPath("$.trust"){value("3.14")}
-                    jsonPath("$.transactionFee"){value("17")}
+                    jsonPath("$.trust"){value("1.0")}
+                    jsonPath("$.transactionFee"){value("1")}
                 }
         }
 
@@ -80,4 +90,110 @@ internal class BankControllerTest{
 
     }
 
+    @Nested
+    @DisplayName("POST /api/banks")
+    @TestInstance(Lifecycle.PER_CLASS)
+    inner class PostNewBank {
+
+        @Test
+        fun `should add the new bank`() {
+            // given
+            val newBank = Bank("acc123", 31.415, 2)
+
+            // when
+            val performPost = mockMvc.post(baseUrl){
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(newBank)
+            }
+            // then
+            performPost
+                .andDo{print()}
+                .andExpect {
+                    status{isCreated()}
+                    content{
+                        contentType(MediaType.APPLICATION_JSON)
+                        json(objectMapper.writeValueAsString(newBank))
+                    }
+//                    jsonPath("$.accountNumber"){value("acc123")}
+//                    jsonPath("$.trust"){value("31.415")}
+//                    jsonPath("$.transactionFee"){value("2") }
+                }
+
+            mockMvc.get("$baseUrl/${newBank.accountNumber}")
+                .andExpect { content{json(objectMapper.writeValueAsString(newBank))} }
+        }
+
+        @Test
+        fun `should return BAD REQUEST if bank with given account number already exists`() {
+            // given
+            var invalidBank = Bank("1234", 1.0, 1)
+
+            // when
+            val performPost = mockMvc.post(baseUrl){
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(invalidBank)
+            }
+
+            // then
+            performPost
+                .andDo { print() }
+                .andExpect { status{isBadRequest()} }
+        }
+
+
+    }
+
+    @Nested
+    @DisplayName("PATCH /api/banks")
+    @TestInstance(Lifecycle.PER_CLASS)
+    inner class PatchExistingBank {
+
+        @Test
+        fun `should update an existing bank`() {
+            // given
+            val updatedBank = Bank("1234", 1.0, 1)
+
+            // when
+            val performPatchRequest = mockMvc.patch(baseUrl){
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(updatedBank)
+            }
+
+            // then
+            performPatchRequest
+                .andDo { print() }
+                .andExpect {
+                    status{isOk()}
+                    content{
+                        contentType(MediaType.APPLICATION_JSON)
+                        json(objectMapper.writeValueAsString(updatedBank))
+                    }
+                }
+
+            mockMvc.get("$baseUrl/${updatedBank.accountNumber}")
+                .andExpect { content {
+                    json(objectMapper.writeValueAsString(updatedBank))
+                } }
+        }
+
+        @Test
+        fun `should return BAD REQUEST if no bank with given account number exists`() {
+            // given
+            val invalidBank = Bank("does_not_exist", 1.0, 1)
+
+            // when
+            val performPatchRequest = mockMvc.patch(baseUrl){
+                contentType = MediaType.APPLICATION_JSON
+                content = objectMapper.writeValueAsString(invalidBank)
+            }
+
+            // then
+            performPatchRequest
+                .andDo { print() }
+                .andExpect { status { isNotFound() } }
+
+        }
+
+
+    }
 }
